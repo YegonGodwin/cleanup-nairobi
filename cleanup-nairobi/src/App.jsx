@@ -26,6 +26,9 @@ import DriverDashboard from './components/driver/pages/DashboardPage';
 import TasksPage from './components/driver/pages/TasksPage';
 import RoutesPage from './components/driver/pages/RoutesPage';
 import VehiclePage from './components/driver/pages/VehiclePage';
+import DriverReportsPage from './components/driver/pages/ReportsPage';
+import DriverSupportPage from './components/driver/pages/SupportPage';
+import DriverSettingsPage from './components/driver/pages/SettingsPage';
 
 import UserManagementPage from './admin/pages/UserManagementPage';
 import ZonesManagementPage from './admin/pages/ZonesManagementPage';
@@ -107,10 +110,10 @@ function App() {
           <Route path="dashboard" element={<DriverDashboard />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="routes" element={<RoutesPage />} />
-          <Route path="reports" element={<div className="p-8 text-center text-gray-500">Reports page coming soon...</div>} />
+          <Route path="reports" element={<DriverReportsPage />} />
           <Route path="vehicle" element={<VehiclePage />} />
-          <Route path="support" element={<div className="p-8 text-center text-gray-500">Support page coming soon...</div>} />
-          <Route path="settings" element={<div className="p-8 text-center text-gray-500">Settings page coming soon...</div>} />
+          <Route path="support" element={<DriverSupportPage />} />
+          <Route path="settings" element={<DriverSettingsPage />} />
         </Route>
 
         <Route path="/dashboard" element={
@@ -132,3 +135,4 @@ function App() {
 }
 
 export default App;
+

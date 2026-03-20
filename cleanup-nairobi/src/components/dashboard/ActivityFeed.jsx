@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
+import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import Badge from '../ui/Badge';
 import Avatar from '../ui/Avatar';
 import { Clock, MapPin, Recycle, Truck, CheckCircle, AlertCircle } from 'lucide-react';

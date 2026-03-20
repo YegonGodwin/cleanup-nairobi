@@ -1,9 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
+import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import Badge from '../ui/Badge';
-import { Bell, X, Check, AlertCircle, Info, CheckCircle, Clock, Truck } from 'lucide-react';
+import { Bell, X, AlertCircle, CheckCircle, Clock, Truck } from 'lucide-react';
 import { notificationsAPI } from '../../services/api';
+
+const normalizeNotifications = (response) => {
+  const payload = response?.data;
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.notifications)) {
+    return payload.notifications;
+  }
+
+  return [];
+};
 
 const NotificationCenter = ({ className = '' }) => {
   const navigate = useNavigate();
@@ -17,7 +31,7 @@ const NotificationCenter = ({ className = '' }) => {
         setIsLoading(true);
         const response = await notificationsAPI.getAll({ limit: 5 });
         if (response.success) {
-          setNotifications(response.data);
+          setNotifications(normalizeNotifications(response));
         }
       } catch (error) {
         console.error('Failed to fetch notifications:', error);
@@ -34,8 +48,10 @@ const NotificationCenter = ({ className = '' }) => {
     switch (type) {
       case 'status_update':
         return <CheckCircle className={`${iconClasses} text-green-500`} />;
+      case 'report_created':
       case 'new_report':
         return <AlertCircle className={`${iconClasses} text-orange-500`} />;
+      case 'report_assigned':
       case 'task_assigned':
         return <Truck className={`${iconClasses} w-4 h-4 text-blue-500`} />;
       default:
@@ -47,8 +63,10 @@ const NotificationCenter = ({ className = '' }) => {
     switch (type) {
       case 'status_update':
         return 'success';
+      case 'report_created':
       case 'new_report':
         return 'warning';
+      case 'report_assigned':
       case 'task_assigned':
         return 'primary';
       default:
@@ -83,14 +101,25 @@ const NotificationCenter = ({ className = '' }) => {
 
   const markAllAsRead = async () => {
     try {
-      await notificationsAPI.markAllAsRead();
+      const unreadIds = notifications
+        .filter((notification) => !notification.is_read)
+        .map((notification) => notification.id)
+        .filter(Boolean);
+
+      if (unreadIds.length === 0) {
+        return;
+      }
+
+      await notificationsAPI.markMultipleAsRead(unreadIds);
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch (error) {
       console.error('Failed to mark all notifications as read:', error);
     }
   };
 
-  const visibleNotifications = notifications.filter(n => !dismissedNotifications.has(n.id));
+  const visibleNotifications = Array.isArray(notifications)
+    ? notifications.filter(n => !dismissedNotifications.has(n.id))
+    : [];
   const unreadCount = visibleNotifications.filter(n => !n.is_read).length;
 
   if (isLoading) {
@@ -168,7 +197,7 @@ const NotificationCenter = ({ className = '' }) => {
                         variant={getNotificationColor(notification.type)} 
                         size="sm"
                       >
-                        {notification.type.replace('_', ' ')}
+                        {String(notification.type || 'notification').replace('_', ' ')}
                       </Badge>
                       <button
                         onClick={() => dismissNotification(notification.id)}

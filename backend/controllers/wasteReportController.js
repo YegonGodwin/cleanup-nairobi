@@ -351,6 +351,51 @@ export const getUserDashboardStats = asyncHandler(async (req, res) => {
       .map(([name, waste]) => ({ name, waste }))
       .reverse();
 
+    // 5. Get recent activities (reports and event joins)
+    const { data: recentReports, error: recentReportsError } = await supabase
+      .from(TABLES.WASTE_REPORTS)
+      .select('id, location, status, created_at, waste_type, description')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (recentReportsError) throw recentReportsError;
+
+    const { data: recentJoins, error: recentJoinsError } = await supabase
+      .from(TABLES.EVENT_PARTICIPANTS)
+      .select(`
+        id,
+        joined_at,
+        cleanup_events (title, location)
+      `)
+      .eq('user_id', userId)
+      .order('joined_at', { ascending: false })
+      .limit(5);
+
+    if (recentJoinsError) throw recentJoinsError;
+
+    const activities = [
+      ...(recentReports || []).map(r => ({
+        id: `report-${r.id}`,
+        type: r.status === 'completed' ? 'report_completed' : 'report_created',
+        title: r.status === 'completed' ? 'Waste collection completed' : 'New waste report submitted',
+        description: r.description,
+        location: r.location,
+        timestamp: r.created_at,
+        user: { name: 'You' }
+      })),
+      ...(recentJoins || []).map(j => ({
+        id: `join-${j.id}`,
+        type: 'recycling_action', // Or a new type 'event_join'
+        title: 'Joined cleanup event',
+        description: `Participating in ${j.cleanup_events?.title}`,
+        location: j.cleanup_events?.location,
+        timestamp: j.joined_at,
+        user: { name: 'You' }
+      }))
+    ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, 5);
+
     // Waste collected: Assuming 5kg per completed report for now
     const wasteCollected = completedReports * 5;
 
@@ -394,7 +439,8 @@ export const getUserDashboardStats = asyncHandler(async (req, res) => {
       completedCollections: completedReports,
       points: user.points || 0,
       wasteBreakdown,
-      monthlyTrends
+      monthlyTrends,
+      activities
     };
 
     return successResponse(res, stats, 'User dashboard statistics retrieved successfully');

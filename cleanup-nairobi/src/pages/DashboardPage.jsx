@@ -224,7 +224,7 @@ const Dashboard = () => {
         {/* Right Column - Activity and Notifications */}
         <div className="xl:col-span-1 space-y-4">
           <NotificationCenter />
-          <ActivityFeed />
+          <ActivityFeed activities={userData.activities} />
         </div>
       </div>
     </div>

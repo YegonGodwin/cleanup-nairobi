@@ -1,22 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import Badge from '../ui/Badge';
-import { Bell, X, Check, AlertCircle, Info, CheckCircle, Clock } from 'lucide-react';
+import { Bell, X, Check, AlertCircle, Info, CheckCircle, Clock, Truck } from 'lucide-react';
+import { notificationsAPI } from '../../services/api';
 
-const NotificationCenter = ({ notifications = [], className = '' }) => {
+const NotificationCenter = ({ className = '' }) => {
+  const navigate = useNavigate();
+  const [notifications, setNotifications] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [dismissedNotifications, setDismissedNotifications] = useState(new Set());
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        setIsLoading(true);
+        const response = await notificationsAPI.getAll({ limit: 5 });
+        if (response.success) {
+          setNotifications(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch notifications:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchNotifications();
+  }, []);
 
   const getNotificationIcon = (type) => {
     const iconClasses = "w-4 h-4";
     switch (type) {
-      case 'success':
+      case 'status_update':
         return <CheckCircle className={`${iconClasses} text-green-500`} />;
-      case 'warning':
-        return <AlertCircle className={`${iconClasses} text-yellow-500`} />;
-      case 'error':
-        return <AlertCircle className={`${iconClasses} text-red-500`} />;
-      case 'info':
-        return <Info className={`${iconClasses} text-blue-500`} />;
+      case 'new_report':
+        return <AlertCircle className={`${iconClasses} text-orange-500`} />;
+      case 'task_assigned':
+        return <Truck className={`${iconClasses} w-4 h-4 text-blue-500`} />;
       default:
         return <Bell className={`${iconClasses} text-gray-500`} />;
     }
@@ -24,20 +45,19 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
 
   const getNotificationColor = (type) => {
     switch (type) {
-      case 'success':
+      case 'status_update':
         return 'success';
-      case 'warning':
+      case 'new_report':
         return 'warning';
-      case 'error':
-        return 'danger';
-      case 'info':
-        return 'secondary';
+      case 'task_assigned':
+        return 'primary';
       default:
         return 'default';
     }
   };
 
   const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return '';
     const now = new Date();
     const time = new Date(timestamp);
     const diffInMinutes = Math.floor((now - time) / (1000 * 60));
@@ -52,54 +72,46 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
     setDismissedNotifications(prev => new Set([...prev, id]));
   };
 
-  const markAsRead = (id) => {
-    // In real app, this would make an API call
-    console.log('Marking notification as read:', id);
+  const markAsRead = async (id) => {
+    try {
+      await notificationsAPI.markAsRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
   };
 
-  // Sample notifications if none provided
-  const sampleNotifications = [
-    {
-      id: 1,
-      type: 'success',
-      title: 'Report Completed',
-      message: 'Your waste report from Uhuru Park has been successfully collected!',
-      timestamp: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
-      read: false,
-      actionable: true
-    },
-    {
-      id: 2,
-      type: 'info',
-      title: 'New Collection Schedule',
-      message: 'Collection in your area has been scheduled for tomorrow at 9:00 AM.',
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-      read: false,
-      actionable: false
-    },
-    {
-      id: 3,
-      type: 'warning',
-      title: 'Goal Reminder',
-      message: 'You\'re 5kg away from reaching your monthly recycling goal!',
-      timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
-      read: true,
-      actionable: true
-    },
-    {
-      id: 4,
-      type: 'success',
-      title: 'Achievement Unlocked',
-      message: 'Congratulations! You\'ve earned the "Eco Champion" badge.',
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      read: true,
-      actionable: false
+  const markAllAsRead = async () => {
+    try {
+      await notificationsAPI.markAllAsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
     }
-  ];
+  };
 
-  const displayNotifications = notifications.length > 0 ? notifications : sampleNotifications;
-  const visibleNotifications = displayNotifications.filter(n => !dismissedNotifications.has(n.id));
-  const unreadCount = visibleNotifications.filter(n => !n.read).length;
+  const visibleNotifications = notifications.filter(n => !dismissedNotifications.has(n.id));
+  const unreadCount = visibleNotifications.filter(n => !n.is_read).length;
+
+  if (isLoading) {
+    return (
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="w-5 h-5 text-gray-400" />
+            Notifications
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4 animate-pulse">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-20 bg-gray-100 rounded-lg"></div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className={className}>
@@ -114,7 +126,10 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
               </Badge>
             )}
           </div>
-          <button className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+          <button 
+            onClick={markAllAsRead}
+            className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          >
             Mark all read
           </button>
         </CardTitle>
@@ -131,7 +146,7 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
             <div 
               key={notification.id} 
               className={`p-4 rounded-lg border transition-all duration-200 hover:shadow-sm ${
-                notification.read 
+                notification.is_read 
                   ? 'bg-gray-50 border-gray-200' 
                   : 'bg-white border-gray-300 shadow-sm'
               }`}
@@ -144,7 +159,7 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <h4 className={`font-medium text-sm ${
-                      notification.read ? 'text-gray-700' : 'text-gray-900'
+                      notification.is_read ? 'text-gray-700' : 'text-gray-900'
                     }`}>
                       {notification.title}
                     </h4>
@@ -153,7 +168,7 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
                         variant={getNotificationColor(notification.type)} 
                         size="sm"
                       >
-                        {notification.type}
+                        {notification.type.replace('_', ' ')}
                       </Badge>
                       <button
                         onClick={() => dismissNotification(notification.id)}
@@ -165,7 +180,7 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
                   </div>
                   
                   <p className={`text-sm mb-2 ${
-                    notification.read ? 'text-gray-600' : 'text-gray-700'
+                    notification.is_read ? 'text-gray-600' : 'text-gray-700'
                   }`}>
                     {notification.message}
                   </p>
@@ -173,10 +188,10 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1 text-xs text-gray-500">
                       <Clock className="w-3 h-3" />
-                      {formatTimeAgo(notification.timestamp)}
+                      {formatTimeAgo(notification.created_at)}
                     </div>
                     
-                    {!notification.read && (
+                    {!notification.is_read && (
                       <button
                         onClick={() => markAsRead(notification.id)}
                         className="text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
@@ -185,14 +200,6 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
                       </button>
                     )}
                   </div>
-                  
-                  {notification.actionable && !notification.read && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <button className="text-sm bg-green-50 text-green-700 px-3 py-1 rounded-md hover:bg-green-100 transition-colors">
-                        Take Action
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -201,7 +208,10 @@ const NotificationCenter = ({ notifications = [], className = '' }) => {
         
         {visibleNotifications.length > 0 && (
           <div className="text-center pt-4">
-            <button className="text-sm text-green-600 hover:text-green-700 font-medium transition-colors duration-200">
+            <button 
+              onClick={() => navigate('/dashboard/notifications')}
+              className="text-sm text-green-600 hover:text-green-700 font-medium transition-colors duration-200"
+            >
               View All Notifications
             </button>
           </div>

@@ -489,49 +489,288 @@ export const deleteUser = async (req, res) => {
 // Get recent activities
 export const getRecentActivities = async (req, res) => {
   try {
-    const { limit = 20 } = req.query;
+    const {
+      limit = 50,
+      action,
+      entityType,
+      entity_type,
+      search
+    } = req.query;
 
-    // Get recent reports
-    const { data: recentReports } = await supabase
-      .from(TABLES.WASTE_REPORTS)
-      .select(`
-        id,
-        location,
-        status,
-        created_at,
-        users (full_name)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(parseInt(limit) / 2);
+    const normalizedLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
+    const entityFilter = String(entityType || entity_type || '').trim().toLowerCase();
+    const actionFilter = String(action || '').trim().toUpperCase();
+    const searchFilter = String(search || '').trim().toLowerCase();
 
-    // Get recent event participants
-    const { data: recentParticipants } = await supabase
-      .from(TABLES.EVENT_PARTICIPANTS)
-      .select(`
-        id,
-        joined_at,
-        users (full_name),
-        cleanup_events (title)
-      `)
-      .order('joined_at', { ascending: false })
-      .limit(parseInt(limit) / 2);
+    const queryLimit = Math.max(12, normalizedLimit);
+
+    const [recentReportsResponse, recentAssignmentsResponse, recentParticipantsResponse, recentUsersResponse] = await Promise.all([
+      supabaseAdmin
+        .from(TABLES.WASTE_REPORTS)
+        .select(`
+          id,
+          location,
+          status,
+          waste_type,
+          description,
+          created_at,
+          updated_at,
+          user_id,
+          users (
+            full_name,
+            email
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(queryLimit),
+      supabaseAdmin
+        .from(TABLES.DRIVER_ASSIGNMENTS)
+        .select(`
+          id,
+          status,
+          report_id,
+          driver_id,
+          assigned_at,
+          accepted_at,
+          started_at,
+          completed_at,
+          cancelled_at,
+          notes,
+          completion_notes,
+          cancellation_reason,
+          drivers (
+            full_name,
+            vehicle_number,
+            user_id
+          ),
+          waste_reports (
+            id,
+            location,
+            status,
+            waste_type
+          )
+        `)
+        .order('assigned_at', { ascending: false })
+        .limit(queryLimit),
+      supabaseAdmin
+        .from(TABLES.EVENT_PARTICIPANTS)
+        .select(`
+          id,
+          joined_at,
+          user_id,
+          users (
+            full_name,
+            email
+          ),
+          cleanup_events (
+            id,
+            title,
+            status
+          )
+        `)
+        .order('joined_at', { ascending: false })
+        .limit(queryLimit),
+      supabaseAdmin
+        .from(TABLES.USERS)
+        .select(`
+          id,
+          full_name,
+          email,
+          role,
+          created_at
+        `)
+        .in('role', [USER_ROLES.ADMIN, USER_ROLES.DRIVER])
+        .order('created_at', { ascending: false })
+        .limit(queryLimit)
+    ]);
+
+    const { data: recentReports, error: reportsError } = recentReportsResponse;
+    const { data: recentAssignments, error: assignmentsError } = recentAssignmentsResponse;
+    const { data: recentParticipants, error: participantsError } = recentParticipantsResponse;
+    const { data: recentUsers, error: usersError } = recentUsersResponse;
+
+    if (reportsError || assignmentsError || participantsError || usersError) {
+      console.error('Get recent activities query error:', {
+        reportsError,
+        assignmentsError,
+        participantsError,
+        usersError
+      });
+      return errorResponse(res, 'Failed to get recent activities', 500);
+    }
+
+    const reportActivities = (recentReports || []).map((report) => ({
+      id: `report-created-${report.id}`,
+      sourceId: report.id,
+      type: 'report',
+      action: 'CREATE',
+      entityType: 'Report',
+      entityId: report.id,
+      actor: {
+        id: report.user_id,
+        name: report.users?.full_name || 'Unknown user',
+        email: report.users?.email || null
+      },
+      target: {
+        title: report.location || 'Waste report',
+        subtitle: report.waste_type || null
+      },
+      status: report.status || 'pending',
+      timestamp: report.created_at,
+      description: `${report.users?.full_name || 'A user'} reported waste at ${report.location || 'an unspecified location'}`,
+      metadata: {
+        wasteType: report.waste_type || null,
+        description: report.description || null,
+        updatedAt: report.updated_at || null
+      }
+    }));
+
+    const assignmentActivities = (recentAssignments || []).flatMap((assignment) => {
+      const driverName = assignment.drivers?.full_name || 'Assigned driver';
+      const location = assignment.waste_reports?.location || 'assigned report';
+
+      const baseRecord = {
+        sourceId: assignment.id,
+        type: 'assignment',
+        entityType: 'Assignment',
+        entityId: assignment.id,
+        actor: {
+          id: assignment.drivers?.user_id || assignment.driver_id,
+          name: driverName,
+          email: null
+        },
+        target: {
+          title: location,
+          subtitle: assignment.waste_reports?.waste_type || null
+        },
+        status: assignment.status || null,
+        metadata: {
+          reportId: assignment.report_id,
+          driverId: assignment.driver_id,
+          notes: assignment.notes || null,
+          completionNotes: assignment.completion_notes || null,
+          cancellationReason: assignment.cancellation_reason || null,
+          vehicleNumber: assignment.drivers?.vehicle_number || null
+        }
+      };
+
+      return [
+        assignment.assigned_at ? {
+          ...baseRecord,
+          id: `assignment-created-${assignment.id}`,
+          action: 'ASSIGN',
+          timestamp: assignment.assigned_at,
+          description: `${driverName} was assigned to ${location}`
+        } : null,
+        assignment.accepted_at ? {
+          ...baseRecord,
+          id: `assignment-accepted-${assignment.id}`,
+          action: 'ACCEPT',
+          timestamp: assignment.accepted_at,
+          description: `${driverName} accepted assignment for ${location}`
+        } : null,
+        assignment.started_at ? {
+          ...baseRecord,
+          id: `assignment-started-${assignment.id}`,
+          action: 'START',
+          timestamp: assignment.started_at,
+          description: `${driverName} started collection at ${location}`
+        } : null,
+        assignment.completed_at ? {
+          ...baseRecord,
+          id: `assignment-completed-${assignment.id}`,
+          action: 'COMPLETE',
+          timestamp: assignment.completed_at,
+          description: `${driverName} completed collection at ${location}`
+        } : null,
+        assignment.cancelled_at ? {
+          ...baseRecord,
+          id: `assignment-cancelled-${assignment.id}`,
+          action: 'CANCEL',
+          timestamp: assignment.cancelled_at,
+          description: `${driverName} cancelled assignment for ${location}`
+        } : null
+      ].filter(Boolean);
+    });
+
+    const participantActivities = (recentParticipants || []).map((participant) => ({
+      id: `event-join-${participant.id}`,
+      sourceId: participant.id,
+      type: 'event_participant',
+      action: 'JOIN',
+      entityType: 'Event',
+      entityId: participant.cleanup_events?.id || participant.id,
+      actor: {
+        id: participant.user_id,
+        name: participant.users?.full_name || 'Unknown participant',
+        email: participant.users?.email || null
+      },
+      target: {
+        title: participant.cleanup_events?.title || 'Cleanup event',
+        subtitle: participant.cleanup_events?.status || null
+      },
+      status: participant.cleanup_events?.status || null,
+      timestamp: participant.joined_at,
+      description: `${participant.users?.full_name || 'A user'} joined ${participant.cleanup_events?.title || 'a cleanup event'}`,
+      metadata: {}
+    }));
+
+    const userActivities = (recentUsers || []).map((user) => ({
+      id: `user-created-${user.id}`,
+      sourceId: user.id,
+      type: 'user',
+      action: 'CREATE',
+      entityType: user.role === USER_ROLES.DRIVER ? 'Driver' : 'Admin',
+      entityId: user.id,
+      actor: {
+        id: user.id,
+        name: user.full_name || 'Unknown user',
+        email: user.email || null
+      },
+      target: {
+        title: user.full_name || user.email || 'System user',
+        subtitle: user.role || null
+      },
+      status: user.role || null,
+      timestamp: user.created_at,
+      description: `${user.full_name || user.email || 'A user'} account was created with role ${user.role || 'unknown'}`,
+      metadata: {
+        email: user.email || null,
+        role: user.role || null
+      }
+    }));
 
     const activities = [
-      ...(recentReports || []).map(r => ({
-        type: 'report',
-        id: r.id,
-        description: `${r.users?.full_name} reported waste at ${r.location}`,
-        status: r.status,
-        timestamp: r.created_at
-      })),
-      ...(recentParticipants || []).map(p => ({
-        type: 'event_join',
-        id: p.id,
-        description: `${p.users?.full_name} joined ${p.cleanup_events?.title}`,
-        timestamp: p.joined_at
-      }))
-    ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-      .slice(0, parseInt(limit));
+      ...reportActivities,
+      ...assignmentActivities,
+      ...participantActivities,
+      ...userActivities
+    ]
+      .filter((activity) => activity.timestamp)
+      .filter((activity) => !actionFilter || activity.action === actionFilter)
+      .filter((activity) => !entityFilter || String(activity.entityType || '').toLowerCase() === entityFilter)
+      .filter((activity) => {
+        if (!searchFilter) return true;
+
+        const haystack = [
+          activity.description,
+          activity.actor?.name,
+          activity.actor?.email,
+          activity.target?.title,
+          activity.target?.subtitle,
+          activity.entityId,
+          activity.status,
+          activity.action,
+          activity.entityType
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return haystack.includes(searchFilter);
+      })
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, normalizedLimit);
 
     return successResponse(res, activities, 'Recent activities retrieved successfully');
   } catch (error) {

@@ -23,6 +23,7 @@ import {
   updateReportStatus,
   deleteReport,
   getUserReports,
+  getUserDashboardStats,
   getNearbyReports,
   getAvailableReportsForAssignment,
   getReportsStats,
@@ -68,6 +69,12 @@ router.get('/user',
   validateGetUserReports, 
   validate, 
   getUserReports
+);
+
+// Get user dashboard statistics
+router.get('/user-stats',
+  authenticate,
+  getUserDashboardStats
 );
 
 // Get reports available for assignment (Admin)

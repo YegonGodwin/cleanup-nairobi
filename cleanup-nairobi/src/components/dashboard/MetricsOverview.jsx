@@ -4,50 +4,50 @@ import Progress from '../ui/Progress';
 import Badge from '../ui/Badge';
 import { Target, TrendingUp, Users, Award, Recycle } from 'lucide-react';
 
-const MetricsOverview = ({ metrics = {}, className = '' }) => {
+const MetricsOverview = ({ stats = {}, className = '' }) => {
   // Default metrics if none provided
-  const defaultMetrics = {
+  const displayMetrics = {
     communityGoal: {
       target: 2000,
-      current: 1650,
+      current: 1650, // This could also come from API if global stats available
       unit: 'kg',
       period: 'this month'
     },
     personalGoal: {
       target: 50,
-      current: 38,
+      current: stats.wasteCollected || 0,
       unit: 'kg',
-      period: 'this month'
+      period: 'total'
     },
     communityRank: {
-      position: 3,
-      total: 150,
+      position: stats.communityRank || '-',
+      total: stats.communitySize || 0,
       change: '+2'
     },
     impactScore: {
-      score: 85,
-      maxScore: 100,
-      level: 'Eco Champion'
+      score: stats.impactScore || 0,
+      maxScore: 1000,
+      level: stats.impactScore > 500 ? 'Eco Champion' : (stats.impactScore > 100 ? 'Nature Guardian' : 'Cleanup Rookie')
     }
   };
-
-  const displayMetrics = { ...defaultMetrics, ...metrics };
 
   const getCommunityProgress = () => {
     return (displayMetrics.communityGoal.current / displayMetrics.communityGoal.target) * 100;
   };
 
   const getPersonalProgress = () => {
-    return (displayMetrics.personalGoal.current / displayMetrics.personalGoal.target) * 100;
+    return Math.min((displayMetrics.personalGoal.current / displayMetrics.personalGoal.target) * 100, 100);
   };
 
   const getImpactProgress = () => {
-    return (displayMetrics.impactScore.score / displayMetrics.impactScore.maxScore) * 100;
+    return Math.min((displayMetrics.impactScore.score / displayMetrics.impactScore.maxScore) * 100, 100);
   };
 
   const getRankBadgeVariant = () => {
-    if (displayMetrics.communityRank.position <= 3) return 'success';
-    if (displayMetrics.communityRank.position <= 10) return 'primary';
+    if (typeof displayMetrics.communityRank.position === 'number') {
+      if (displayMetrics.communityRank.position <= 3) return 'success';
+      if (displayMetrics.communityRank.position <= 10) return 'primary';
+    }
     return 'secondary';
   };
 

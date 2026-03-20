@@ -9,6 +9,7 @@ import ActivityFeed from '../components/dashboard/ActivityFeed';
 import NotificationCenter from '../components/dashboard/NotificationCenter';
 import WasteBreakdownChart from '../components/dashboard/WasteBreakdownChart';
 import MonthlyTrendChart from '../components/dashboard/MonthlyTrendChart';
+import { reportsAPI } from '../services/api';
 import { 
   Recycle, 
   Leaf, 
@@ -24,20 +25,34 @@ import {
 const Dashboard = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState(null);
 
-  // Simulate loading
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 1000);
-    return () => clearTimeout(timer);
+    const fetchStats = async () => {
+      try {
+        setIsLoading(true);
+        const response = await reportsAPI.getDashboardStats();
+        if (response.success) {
+          setStats(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch dashboard stats:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchStats();
   }, []);
 
-  const userData = {
-    wasteCollected: 45.5, // in kg
-    recyclingActions: 12,
-    communityRank: 3,
-    impactScore: 85,
-    reportsSubmitted: 8,
-    completedCollections: 15
+  const userData = stats || {
+    wasteCollected: 0,
+    recyclingActions: 0,
+    communityRank: '-',
+    communitySize: 0,
+    impactScore: 0,
+    reportsSubmitted: 0,
+    completedCollections: 0
   };
 
   const quickActions = [
@@ -66,10 +81,10 @@ const Dashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 animate-pulse">
+      <div className="space-y-6 animate-pulse p-6">
         <div className="h-48 bg-gray-200 rounded-xl"></div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[1, 2, 3].map(i => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map(i => (
             <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
           ))}
         </div>
@@ -92,7 +107,7 @@ const Dashboard = () => {
           value={`${userData.wasteCollected}kg`}
           change="+12%"
           trend="up"
-          description="Personal contribution this month"
+          description="Personal contribution total"
           color="green"
         />
         <EnhancedStatCard
@@ -101,7 +116,7 @@ const Dashboard = () => {
           value={userData.recyclingActions}
           change="+8%"
           trend="up"
-          description="Items properly recycled"
+          description="Items properly reported"
           color="blue"
         />
         <EnhancedStatCard
@@ -110,7 +125,7 @@ const Dashboard = () => {
           value={`#${userData.communityRank}`}
           change="+2"
           trend="up"
-          description="Out of 150 active members"
+          description={`Out of ${userData.communitySize} members`}
           color="yellow"
         />
         <EnhancedStatCard
@@ -146,12 +161,12 @@ const Dashboard = () => {
         {/* Left Column - Charts and Metrics */}
         <div className="xl:col-span-3 space-y-6">
           {/* Goals and Achievements */}
-          <MetricsOverview />
+          <MetricsOverview stats={userData} />
 
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <WasteBreakdownChart />
-            <MonthlyTrendChart />
+            <WasteBreakdownChart data={userData.wasteBreakdown} />
+            <MonthlyTrendChart data={userData.monthlyTrends} />
           </div>
 
           {/* Additional Stats Row */}
@@ -186,7 +201,7 @@ const Dashboard = () => {
                   <Users className="w-4 h-4 text-purple-600" />
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-purple-700">150</div>
+                  <div className="text-xl font-bold text-purple-700">{userData.communitySize}</div>
                   <div className="text-xs text-gray-600">Community Size</div>
                 </div>
               </div>
@@ -198,8 +213,8 @@ const Dashboard = () => {
                   <TrendingUp className="w-4 h-4 text-orange-600" />
                 </div>
                 <div>
-                  <div className="text-xl font-bold text-orange-700">+25%</div>
-                  <div className="text-xs text-gray-600">Monthly Growth</div>
+                  <div className="text-xl font-bold text-orange-700">{userData.points}</div>
+                  <div className="text-xs text-gray-600">Total Points</div>
                 </div>
               </div>
             </div>

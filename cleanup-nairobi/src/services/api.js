@@ -155,6 +155,13 @@ export const reportsAPI = {
     }, { operation: 'getUserReports', params });
   }, { showToast: false }),
 
+  // Get user's dashboard statistics
+  getDashboardStats: withErrorHandling(async () => {
+    return await makeAPIRequest('/api/reports/user-stats', {
+      method: 'GET',
+    }, { operation: 'getUserDashboardStats' });
+  }, { showToast: false }),
+
   // Get all reports (admin) with comprehensive filtering
   getAll: withErrorHandling(async (params = {}) => {
     const queryString = new URLSearchParams(params).toString();

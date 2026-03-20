@@ -287,6 +287,125 @@ export const getUserReports = asyncHandler(async (req, res) => {
   }
 });
 
+// Get user dashboard statistics
+export const getUserDashboardStats = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    // 1. Get user reports stats
+    const { data: reports, error: reportsError } = await supabase
+      .from(TABLES.WASTE_REPORTS)
+      .select('status, waste_type')
+      .eq('user_id', userId);
+
+    if (reportsError) throw reportsError;
+
+    const totalReports = (reports || []).length;
+    const completedReports = (reports || []).filter(r => r.status === REPORT_STATUS.COMPLETED).length;
+    
+    // Recycling actions: reports with specific waste types (plastic, metal, glass, paper)
+    const recyclingTypes = ['plastic', 'metal', 'glass', 'paper'];
+    const recyclingActions = (reports || []).filter(r => recyclingTypes.includes(r.waste_type)).length;
+
+    // Waste breakdown for PieChart
+    const breakdown = (reports || []).reduce((acc, report) => {
+      const type = report.waste_type || 'other';
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {});
+
+    const wasteBreakdown = Object.entries(breakdown).map(([name, value]) => ({
+      name: name.charAt(0).toUpperCase() + name.slice(1),
+      value
+    }));
+
+    // Monthly trends (last 6 months)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const { data: trendData, error: trendError } = await supabase
+      .from(TABLES.WASTE_REPORTS)
+      .select('created_at')
+      .eq('user_id', userId)
+      .gte('created_at', sixMonthsAgo.toISOString());
+
+    if (trendError) throw trendError;
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const trends = {};
+    for (let i = 0; i < 6; i++) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const monthName = months[d.getMonth()];
+      trends[monthName] = 0;
+    }
+
+    (trendData || []).forEach(report => {
+      const monthName = months[new Date(report.created_at).getMonth()];
+      if (trends[monthName] !== undefined) {
+        trends[monthName]++;
+      }
+    });
+
+    const monthlyTrends = Object.entries(trends)
+      .map(([name, waste]) => ({ name, waste }))
+      .reverse();
+
+    // Waste collected: Assuming 5kg per completed report for now
+    const wasteCollected = completedReports * 5;
+
+    // 2. Get user points
+    const { data: user, error: userError } = await supabase
+      .from(TABLES.USERS)
+      .select('points')
+      .eq('id', userId)
+      .single();
+
+    if (userError) throw userError;
+
+    // 3. Calculate rank: count users with points > current user's points
+    const { count: higherPointsCount, error: rankError } = await supabase
+      .from(TABLES.USERS)
+      .select('*', { count: 'exact', head: true })
+      .gt('points', user.points || 0);
+
+    if (rankError) throw rankError;
+
+    const communityRank = (higherPointsCount || 0) + 1;
+    
+    // Impact score: derived from points (for example, points * 1.5)
+    const impactScore = Math.floor((user.points || 0) * 1.5);
+
+    // 4. Get total community size
+    const { count: communitySize, error: sizeError } = await supabase
+      .from(TABLES.USERS)
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'user');
+
+    if (sizeError) throw sizeError;
+
+    const stats = {
+      wasteCollected,
+      recyclingActions,
+      communityRank,
+      communitySize: communitySize || 0,
+      impactScore,
+      reportsSubmitted: totalReports,
+      completedCollections: completedReports,
+      points: user.points || 0,
+      wasteBreakdown,
+      monthlyTrends
+    };
+
+    return successResponse(res, stats, 'User dashboard statistics retrieved successfully');
+  } catch (error) {
+    logError(error, { context: 'get_user_dashboard_stats', userId });
+    
+    const dbError = handleDatabaseError(error);
+    return errorResponse(res, dbError.message, dbError.statusCode);
+  }
+});
+
 // Get nearby reports (for drivers)
 export const getNearbyReports = asyncHandler(async (req, res) => {
   const { latitude, longitude, radius = 5 } = req.query;
@@ -422,6 +541,7 @@ export default {
   updateReportStatus,
   deleteReport,
   getUserReports,
+  getUserDashboardStats,
   getNearbyReports,
   getAvailableReportsForAssignment,
   getReportsStats,
